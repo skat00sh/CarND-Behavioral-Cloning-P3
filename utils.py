@@ -27,20 +27,26 @@ for line in lines:
 	measurement = float(line[3])
 	measurements.append(measurement)
 
+
 X_train = np.array(images)
-y_train = np.array(measurements)
+y_train = np.array(meaurements)
 
 # print(X_train.shape)
 ##Temporarily declaring model here for testing. To be included in models.py
 
 from keras.models import Sequential
-from keras.layers import Flatten, Dense, Lambda
+from keras.layers import Flatten, Dense, Lambda, Activation
 from keras.layers.convolutional import Conv2D
+from keras.layers.pooling import MaxPooling2D
 
 model = Sequential()
 model.add(Lambda(lambda x:x / 255.0 - 0.5, input_shape = (160,320,3)))
+model.add(Conv2D(6, 5, 5, input_shape=(160, 320, 3)))
+model.add(MaxPooling2D(pool_size=(2,2)))
+model.add(Activation('relu'))
 model.add(Flatten())
 model.add(Dense(1))
+
 
 model.compile(loss = 'mse', optimizer = 'adam')
 model.fit(X_train, y_train, validation_split=0.2, shuffle=True, nb_epoch=7)
