@@ -28,8 +28,15 @@ for line in lines:
 	measurements.append(measurement)
 
 
-X_train = np.array(images)
-y_train = np.array(meaurements)
+augmented_images, augmented_meaurements = [], []
+for image, measurement in zip(images,measurements):
+	augmented_images.append(image)
+	augmented_meaurements.append(measurement)
+	augmented_images.append(cv2.flip(image,1))
+	augmented_meaurements.append(measurement*-1.0)
+
+X_train = np.array(augmented_images)
+y_train = np.array(augmented_meaurements)
 
 # print(X_train.shape)
 ##Temporarily declaring model here for testing. To be included in models.py
