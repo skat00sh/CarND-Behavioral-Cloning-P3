@@ -1,71 +1,109 @@
-import csv
-import cv2
+import matplotlib.pyplot as plt
 import numpy as np
-
-lines = []
-
-with open('data/driving_log.csv') as csvfile:
-	reader = csv.reader(csvfile)
-	for line in reader:
-		lines.append(line)
-
-# print(lines[0])
-
-images = []
-measurements = []
-i=0
-for line in lines:
-	source_path = line[0]
-	# if i<5:
-	# 	print(line)
-	# 	print(source_path)
-	# 	i+=1
-	# filename = source_path.split('/')[-1]
-	# current_path = 'data/IMG' + filename
-	image = cv2.imread(source_path)
-	images.append(image)
-	measurement = float(line[3])
-	measurements.append(measurement)
+import cv2
+import os
 
 
-augmented_images, augmented_meaurements = [], []
-for image, measurement in zip(images,measurements):
-	augmented_images.append(image)
-	augmented_meaurements.append(measurement)
-	augmented_images.append(cv2.flip(image,1))
-	augmented_meaurements.append(measurement*-1.0)
+def randomly_drop_low_steering_data(data):
+    """ Randomly decrease data having
+    low steering angle
+    """
+    index = data[abs(data['steer'])<.05].index.tolist()
+    rows = [i for i in index if np.random.randint(10) < 8]
+    data = data.drop(data.index[rows])
+    print("Dropped %s rows with low steering"%(len(rows)))
+    return data
+    
+    
+def preprocess_img(img):
+    """Returns croppped image
+    """
+    return img[60:135, : ]
 
-X_train = np.array(augmented_images)
-y_train = np.array(augmented_meaurements)
-
-# print(X_train.shape)
-##Temporarily declaring model here for testing. To be included in models.py
-
-from keras.models import Sequential
-from keras.layers import Flatten, Dense, Lambda, Activation
-from keras.layers.convolutional import Conv2D
-from keras.layers.pooling import MaxPooling2D
-
-model = Sequential()
-model.add(Lambda(lambda x:x / 255.0 - 0.5, input_shape = (160,320,3)))
-model.add(Lambda(lambda x:x / 255.0 - 0.5, input_shape = (160,320,3)))
-model.add(Conv2D(6, 5, 5, input_shape=(160, 320, 3)))
-model.add(MaxPooling2D(pool_size=(2,2)))
-model.add(Activation('relu'))
-model.add(Conv2D(6, 5, 5))
-model.add(MaxPooling2D(pool_size=(2,2)))
-model.add(Activation('relu'))
-model.add(Flatten())
-model.add(Dense(100))
-model.add(Activation('relu'))
-model.add(Dense(50))
-model.add(Activation('relu'))
-model.add(Dense(10))
-model.add(Activation('relu'))
-model.add(Dense(1))
+    
+def process_img_from_path(img_path):
+    """Returns Croppped Image
+    for given img path.
+    """
+    return preprocess_img(plt.imread(img_path))
 
 
-model.compile(loss = 'mse', optimizer = 'adam')
-model.fit(X_train, y_train, validation_split=0.2, shuffle=True, nb_epoch=7)
+def get_batch(data, batch_size):
+    """Returns randomly sampled data
+    from given pandas df  .  
+    """
+    return data.sample(n=batch_size)
 
-model.save('model.h5')
+    
+def get_random_image_and_steering_angle(data, value, data_path):
+    """ Returns randomly selected right, left or center images
+    and their corrsponding steering angle.
+    The probability to select center is twice of right or left. 
+    """ 
+    random = np.random.randint(4)
+    if (random == 0):
+        img_path = data['left'][value].strip()
+        shift_ang = .25
+    if (random == 1 or random == 3):
+        img_path = data['center'][value].strip()
+        shift_ang = 0.
+    if (random == 2):
+        img_path = data['right'][value].strip()
+        shift_ang = -.25
+    img = process_img_from_path(os.path.join(data_path, img_path))
+    steer_ang = float(data['steer'][value]) + shift_ang
+    return img, steer_ang
+  
+  
+def trans_image(image, steer):
+    """ Returns translated image and 
+    corrsponding steering angle.
+    """
+    trans_range = 100
+    tr_x = trans_range * np.random.uniform() - trans_range / 2
+    steer_ang = steer + tr_x / trans_range * 2 * .2
+    tr_y = 0
+    M = np.float32([[1, 0, tr_x], [0, 1, tr_y]])
+    image_tr = cv2.warpAffine(image, M, (320,75))
+    return image_tr, steer_ang
+
+    
+def training_image_generator(data, batch_size, data_path):
+    """
+    Train data generator
+    """
+    while 1:
+        batch = get_batch(data, batch_size)
+        features = np.empty([batch_size, 75, 320, 3])
+        labels = np.empty([batch_size, 1])
+        for i, value in enumerate(batch.index.values):
+            # Randomly select right, center or left image
+            img, steer_ang = get_random_image_and_steering_angle(data, value, data_path)
+            img = img.reshape(img.shape[0], img.shape[1], 3)          
+            # Random Translation Jitter
+            img, steer_ang = trans_image(img, steer_ang)
+            # Randomly Flip Images
+            random = np.random.randint(1)
+            if (random == 0):
+                img, steer_ang = np.fliplr(img), -steer_ang
+            features[i] = img
+            labels[i] = steer_ang
+            yield np.array(features), np.array(labels)
+        
+
+def get_images(data, data_path):
+    """
+    Validation Generator
+    """
+    while 1:
+        for i in range(len(data)):
+            img_path = data['center'][i].strip()
+            img = process_img_from_path(os.path.join(data_path, img_path))
+            img = img.reshape(1, img.shape[0], img.shape[1], 3)
+            steer_ang = data['steer'][i]
+            steer_ang = np.array([[steer_ang]])
+            yield img, steer_ang
+
+
+
+
